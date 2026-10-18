@@ -5,9 +5,10 @@ import vm from 'node:vm'
 import { SCENE_DEFAULTS } from '../lib/voice-service.js'
 
 const source = fs.readFileSync(new URL('../lib/splash.js', import.meta.url), 'utf8')
-function runtime({ speed = 3, interaction = false, suspended = false, scenes = SCENE_DEFAULTS } = {}) {
+function runtime({ speed = 3, interaction = false, suspended = false, scenes = SCENE_DEFAULTS, voicePreset = 'shaoluohuang', failAssets = false, speechSupported = false } = {}) {
   let now = 0, serial = 0, allowResume = !suspended
   const tasks = new Map(), elements = new Map(), contexts = [], playing = [], listeners = new Map()
+  const requested = [], spoken = []
   const durations = [12, 9, 8, 11, 10, 13]
   function schedule(fn, delay, interval = 0) {
     const id = ++serial; tasks.set(id, { fn, time: now + Math.max(0, Number(delay) || 0), interval }); return id
@@ -47,7 +48,7 @@ function runtime({ speed = 3, interaction = false, suspended = false, scenes = S
     return el
   }
   function lookup(selector) {
-    if (!elements.has(selector)) { const el = element(); if (selector === '.dsu-audio-unlock') el.hidden = true; elements.set(selector, el) }
+    if (!elements.has(selector)) { const el = element(); if (selector === '.dsu-audio-unlock' || selector === '.dsu-audio-error') el.hidden = true; elements.set(selector, el) }
     return elements.get(selector)
   }
   const root = element(), body = element('body')
@@ -84,17 +85,26 @@ function runtime({ speed = 3, interaction = false, suspended = false, scenes = S
   }
   class FakeDate extends Date { constructor(...args) { super(...(args.length ? args : [1700000000000 + now])) } static now() { return now } }
   const window = eventTarget({ __DSH_STARTUP__: { mode: 'always', speed, sound: false, voice: true, voiceLead: 240,
-    voiceCue: false, requireInteraction: interaction, scenes,
+    voiceCue: false, requireInteraction: interaction, scenes, voicePreset,
     sceneAudio: scenes.map((_, i) => '/dsh-startup/asset/test-' + i + '.mp3') },
     AudioContext, location: { host: 'localhost', href: 'http://localhost/' },
     sessionStorage: { setItem() {} }, localStorage: { setItem() {} },
     CustomEvent: class { constructor(type) { this.type = type } }, dispatchEvent() {} })
+  if (speechSupported) {
+    window.SpeechSynthesisUtterance = class { constructor(text) { this.text = text } }
+    window.speechSynthesis = { getVoices: () => [], addEventListener() {}, removeEventListener() {}, cancel() {}, resume() {},
+      speak(u) { spoken.push(u.text); u.onend?.() }, speaking: false, pending: false }
+  }
   const sandbox = { window, document, console, Date: FakeDate,
-    fetch: async url => ({ ok: true, arrayBuffer: async () => new Uint8Array([Number(/test-(\d)/.exec(url)?.[1] || 0)]).buffer }),
+    fetch: async url => {
+      requested.push(url)
+      const idx = /test-(\d)/.exec(url)?.[1] ?? (Number(/line-(\d)/.exec(url)?.[1] || 1) - 1)
+      return { ok: !failAssets, arrayBuffer: async () => new Uint8Array([Number(idx)]).buffer }
+    },
     setTimeout: (fn, ms) => schedule(fn, ms), clearTimeout: id => tasks.delete(id),
     setInterval: (fn, ms) => schedule(fn, ms, ms), clearInterval: id => tasks.delete(id), requestAnimationFrame: fn => schedule(fn, 0) }
   vm.runInNewContext(source, sandbox, { filename: 'splash.js' })
-  return { root, window, lookup, advance, playing, contexts, now: () => now,
+  return { root, window, lookup, advance, playing, contexts, requested, spoken, now: () => now,
     gesture() { allowResume = true; document.dispatch('pointerdown') } }
 }
 
@@ -143,4 +153,26 @@ test('custom final subtitles and empty speech use the configured scene, includin
   const r = runtime({ scenes })
   assert.equal(r.lookup('.dsu-w4').textContent, '你好，JOYCE MOORE')
   assert.equal(r.lookup('.dsu-w1').textContent, 'READY')
+})
+
+test('original runtime ignores custom captions and cached asset mappings', async () => {
+  const scenes = SCENE_DEFAULTS.map(s => ({ ...s, zh: '自定义字幕', speechText: '自定义台词' }))
+  const r = runtime({ voicePreset: 'original', scenes, speechSupported: true })
+  assert.equal(r.lookup('.dsu-w4').textContent, '欢迎 JOYCE MOORE 访问')
+  r.gesture()
+  await r.advance(2000)
+  assert.equal(r.playing.length, 1)
+  const voiceRequests = r.requested.filter(url => !url.includes('/asset/sfx-'))
+  assert.equal(voiceRequests.length, 6)
+  assert.ok(voiceRequests.every(url => /^\/dsh-startup\/asset\/line-[1-6]\.mp3$/.test(url)))
+  assert.equal(r.spoken.length, 0)
+})
+
+test('missing original recordings show an error instead of using an available system TTS', async () => {
+  const r = runtime({ voicePreset: 'original', failAssets: true, speechSupported: true })
+  await r.advance(2000)
+  assert.equal(r.playing.length, 0)
+  assert.equal(r.spoken.length, 0, 'original must never fall back to the operating system voice')
+  assert.equal(r.lookup('.dsu-audio-error').hidden, false)
+  assert.match(r.lookup('.dsu-audio-error').textContent, /原版录音加载失败/)
 })

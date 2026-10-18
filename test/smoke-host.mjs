@@ -182,7 +182,7 @@ cfg = JSON.parse(r.body)
 check('speed 低于下限被夹到 0.35', cfg.config.speed === 0.35, String(cfg.config.speed))
 check('非法 theme 回落到 light', cfg.config.theme === 'light', cfg.config.theme)
 check('非法颜色回落到默认橙', cfg.config.accent === '#ff7500', cfg.config.accent)
-r = await call('exact /dsh-startup/config', 'POST', JSON.stringify({ patch: { synthesisSpeed: 0.5 } }))
+r = await call('exact /dsh-startup/config', 'POST', JSON.stringify({ patch: { voicePreset: 'shaoluohuang', synthesisSpeed: 0.5 } }))
 check('合成语速低于 0.90 时修正到 0.90', JSON.parse(r.body).config.synthesisSpeed === 0.90)
 r = await call('exact /dsh-startup/config', 'POST', JSON.stringify({ patch: { synthesisSpeed: 2 } }))
 check('合成语速高于 1.10 时修正到 1.10', JSON.parse(r.body).config.synthesisSpeed === 1.10)
@@ -222,6 +222,15 @@ check('音频缓存接口不能读凭证文件', r.statusCode === 404)
 r = await call('exact /dsh-startup/voices', 'POST', JSON.stringify({ action: 'key', apiKey: 'sk-test-cross-site' }), undefined,
   { host: '127.0.0.1:3080', origin: 'https://untrusted.example', 'sec-fetch-site': 'cross-site' })
 check('跨站声音写入被拒绝', r.statusCode === 403)
+
+const editedScenes = saved.scenes.map(s => ({ ...s }))
+editedScenes[0].zh = '用户修改的字幕'; editedScenes[0].speechText = '用户修改的播报'
+r = await voicePost({ action: 'select', id: 'original', config: { ...saved, scenes: editedScenes, synthesisSpeed: 1.05 } })
+const original = JSON.parse(r.body)
+check('选择原版恢复原始字幕与录音且生成数为 0', original.ok && original.generated === 0 && original.config.scenes[0].zh === '需要访问许可' && original.config.sceneAudio[0] === '/dsh-startup/asset/line-1.mp3')
+check('原版固定 1 倍速，用户改稿另存', original.config.synthesisSpeed === 1 && original.config.customVoiceDraft.scenes[0].speechText === '用户修改的播报')
+r = await voicePost({ action: 'regenerate', config: original.config })
+check('原版拒绝重新生成请求', r.statusCode === 400 && JSON.parse(r.body).error.includes('不能重新生成'))
 
 console.log('\n[5] 信任栅栏（DNS 重绑定 / 未认证请求）')
 rejectNext = 403

@@ -1105,6 +1105,13 @@
   font: inherit; font-size: 13px; cursor: pointer;
 }
 .dsu-audio-unlock[hidden] { display: none; }
+.dsu-audio-error {
+  position: absolute; left: 50%; bottom: 140px; transform: translateX(-50%);
+  z-index: 80; padding: 10px 16px; border: 1px solid var(--dsu-accent);
+  border-radius: 6px; background: var(--dsu-paper, #f6f3ec); color: var(--dsu-ink);
+  font-size: 13px;
+}
+.dsu-audio-error[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) {
   #dsh-startup-root .dsu-ret-rot-a,
   #dsh-startup-root .dsu-ret-rot-b { animation: none; }

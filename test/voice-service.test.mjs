@@ -3,8 +3,9 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { createVoiceService, normalizeScenes, SCENE_DEFAULTS, VOICE_MODEL } from '../lib/voice-service.js'
+import { createVoiceService, normalizeScenes, selectVoicePreset, SCENE_DEFAULTS, VOICE_MODEL } from '../lib/voice-service.js'
 
 const packageRoot = fileURLToPath(new URL('..', import.meta.url))
 const mp3 = fs.readFileSync(new URL('../lib/assets/line-1.mp3', import.meta.url))
@@ -68,6 +69,50 @@ test('both bundled presets work offline; default recordings are left intact', as
   }
   assert.equal(f.calls.length, 0)
   assert.deepEqual(fs.readFileSync(new URL('../lib/assets/line-1.mp3', import.meta.url)), before)
+})
+
+test('returning to original restores the exact bundled preset without upload or generation and retains custom edits', async t => {
+  const f = fixture(t)
+  const edited = config('shaoluohuang')
+  edited.synthesisSpeed = 1.05
+  edited.scenes[0] = { ...edited.scenes[0], zh: '这是我修改的画面', speechText: '这是我修改的录音' }
+  const result = await f.service.sync(selectVoicePreset(edited, 'original'))
+  assert.equal(result.generated, 0); assert.equal(result.cached, 6)
+  assert.equal(result.config.voiceSource, 'asset')
+  assert.equal(result.config.synthesisSpeed, 1)
+  assert.deepEqual(result.config.scenes, SCENE_DEFAULTS)
+  assert.deepEqual(result.config.sceneAudio, SCENE_DEFAULTS.map(s => '/dsh-startup/asset/' + s.id + '.mp3'))
+  const restored = selectVoicePreset(result.config, 'shaoluohuang')
+  assert.deepEqual(restored.scenes, edited.scenes)
+  assert.equal(restored.synthesisSpeed, 1.05)
+  await assert.rejects(f.service.sync(result.config, { force: true }), /原版播报.*不能重新生成/)
+  assert.equal(f.calls.length, 0)
+})
+
+test('legacy original-generated overrides and stale TTS config cannot replace the original files', async t => {
+  const f = fixture(t), voiceRoot = path.join(f.home, 'startup-voices')
+  fs.mkdirSync(path.join(voiceRoot, 'cache'), { recursive: true })
+  const name = 'a'.repeat(64) + '.mp3'
+  fs.writeFileSync(path.join(voiceRoot, 'cache', name), mp3)
+  const oldKey = crypto.createHash('sha256').update(JSON.stringify({ id: 'original', text: SCENE_DEFAULTS[0].speechText, model: VOICE_MODEL })).digest('hex')
+  fs.writeFileSync(path.join(voiceRoot, 'library.json'), JSON.stringify({ overrides: { [oldKey]: name } }))
+  const edited = config('original')
+  edited.voiceSource = 'tts'; edited.synthesisSpeed = 1.10
+  edited.scenes[1] = { ...edited.scenes[1], speechText: '不要再合成这句话' }
+  const result = await f.service.sync(edited)
+  assert.equal(result.config.voiceSource, 'asset')
+  assert.equal(result.config.synthesisSpeed, 1)
+  assert.deepEqual(result.config.scenes, SCENE_DEFAULTS)
+  assert.ok(result.config.sceneAudio.every(url => /^\/dsh-startup\/asset\/line-[1-6]\.mp3$/.test(url)))
+  assert.equal(result.config.customVoiceDraft.scenes[1].speechText, '不要再合成这句话')
+  assert.equal(f.calls.length, 0)
+})
+
+test('missing original files report an error and never trigger synthesis', async t => {
+  const f = fixture(t)
+  const broken = createVoiceService({ home: f.home, packageRoot: path.join(f.home, 'missing-package'), fetchImpl: () => { throw new Error('No network request expected') } })
+  await assert.rejects(broken.sync(config('original')), /原版录音文件缺失/)
+  assert.equal(f.calls.length, 0)
 })
 
 test('Chinese names and filename defaults round trip through the real API shape without exposing URIs or keys', async t => {

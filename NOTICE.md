@@ -11,7 +11,7 @@
 ## 音频素材范围
 
 - `lib/assets/line-1.mp3` 至 `line-6.mp3`、`sfx-tick.mp3`、`sfx-ticks-run.mp3`：继承自上游。上游 README 说明这些音频取自第三方视频，权利归原权利人所有。
-- `original-reference.mp3`：由上游六段人声拼接形成，供用户调整原版预设台词时参考；不扩大原素材的授权范围。
+- `original-reference.mp3`：由上游六段人声拼接形成的旧版参考文件；当前原版播报不使用它合成，不扩大原素材的授权范围。
 - `shaoluohuang-reference.mp3`：本版开发过程中提供的参考音频。
 - `shaoluohuang-line-1.mp3` 至 `shaoluohuang-line-6.mp3`：使用上述参考音频，通过硅基流动的 `FunAudioLLM/CosyVoice2-0.5B` 合成。请求文本与文件校验值记录在 `lib/voice-presets.json`。
 

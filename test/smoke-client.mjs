@@ -8,6 +8,7 @@
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { fileURLToPath } from 'node:url'
+import { normalizeScenes, selectVoicePreset } from '../lib/voice-service.js'
 
 let pass = 0
 let fail = 0
@@ -57,6 +58,7 @@ const windowStub = {
 const CFG = {
   enabled: true, mode: 'session', theme: 'light', speed: 1,
   requireInteraction: true, allowSkip: true, sound: true, soundVolume: 0.5,
+  voicePreset: 'shaoluohuang',
   voice: true, voiceLang: 'en', voiceName: '', voiceRate: 1, voicePitch: 1, voiceVolume: 0.9,
   identity: 'JOYCE MOORE', identityId: '0087', accessLevel: '3',
   brand1: 'DEEPSEEK', brand2: 'SYNTHESIZE INTELLIGENCE', brand3a: 'HARNESS', brand3b: 'OS',
@@ -73,9 +75,13 @@ const fetchStub = (url, init) => {
   let config = CFG
   if (body && body.action === 'reset') config = Object.assign({}, CFG)
   else if (body && body.patch) config = Object.assign({}, CFG, body.patch)
+  else if (body && body.action === 'select') {
+    config = selectVoicePreset(body.config, body.id)
+    config.sceneAudio = config.scenes.map(s => '/dsh-startup/asset/' + (body.id === 'original' ? '' : 'shaoluohuang-') + s.id + '.mp3')
+  }
   return Promise.resolve({
     json: () => Promise.resolve(isPost
-      ? { ok: true, version: versionInResponse, config, defaults: CFG }
+      ? { ok: true, version: versionInResponse, config, defaults: CFG, cached: 6, generated: 0 }
       : { ok: true, version: versionInResponse, config, defaults: CFG, file: 'C:\\\\Users\\\\x\\\\.dsh\\\\dsh-startup.json' }),
   })
 }
@@ -223,6 +229,24 @@ check('立即预览调用 __DSH_STARTUP_API__.replay()', windowStub.__replayed =
 delete windowStub.__DSH_STARTUP_API__
 previewBtn.props.onClick()
 check('没有 API 时回退到 location.reload()', windowStub.__reloaded === true)
+
+console.log('\n[7] 原版为固定预设，自定义台词不会丢失')
+CFG.scenes = normalizeScenes()
+CFG.scenes[0].speechText = '保留我的自定义台词'
+CFG.synthesisSpeed = 1.05
+find(renderPanel(), n => n.type === 'button' && n.props.children === '放弃修改').props.onClick()
+await flush(); await flush()
+const voiceSelect = () => find(renderPanel(), n => n.type === 'select' && n.props['aria-label'] === '当前声音')
+voiceSelect().props.onChange({ target: { value: 'original' } })
+await flush(); await flush(); await flush()
+check('切换原版使用 select 操作', requests.some(r => r.init?.method === 'POST' && JSON.parse(r.init.body).action === 'select'))
+check('原版合成语速固定且不可编辑', speedField().props.value === '1.00' && speedField().props.disabled)
+check('原版字幕不可编辑', find(renderPanel(), n => n.type === 'input' && n.props['aria-label'] === '第1幕中文字幕').props.disabled)
+check('原版播报文字恢复内置台词', find(renderPanel(), n => n.type === 'input' && n.props['aria-label'] === '第1幕实际播报文字').props.value === 'Access permission required.')
+voiceSelect().props.onChange({ target: { value: 'shaoluohuang' } })
+await flush(); await flush(); await flush()
+check('切回其他声音恢复自定义台词', find(renderPanel(), n => n.type === 'input' && n.props['aria-label'] === '第1幕实际播报文字').props.value === '保留我的自定义台词')
+check('切回其他声音恢复合成语速', speedField().props.value === '1.05' && !speedField().props.disabled)
 
 console.log('\n============================')
 console.log(`  通过 ${pass} / 失败 ${fail}`)
