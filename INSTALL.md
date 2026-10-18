@@ -115,10 +115,12 @@ lib/index.js          Host 半：路由 + index.html 注入
 lib/splash.js         启动动画运行时
 lib/splash.css        全部样式
 lib/client.js         设置面板（浏览器半）
-lib/assets/           真声台词 x5 + 终幕欢迎语 + 界面音效 x2
+lib/assets/           两套各 6 段录音 + 界面音效 x2 + 预设参考音频 x2
+lib/voice-service.js  硅基流动声音管理、合成、缓存、重新生成
+lib/voice-presets.json 新预设生成信息与文件校验值（不含凭证）
 cordis.patch.yml      bundle 层声明
 preview/index.html    离线预览页
-test/                 三套冒烟测试（146 项断言）
+test/                 Host/设置/启动/桌面自举回归 + 声音服务与播放时序测试
 README.md             完整文档
 AUDIO-FIELDS.md       需要音频的字段清单
 ```

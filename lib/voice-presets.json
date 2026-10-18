@@ -1,0 +1,44 @@
+{
+  "name": "少萝皇",
+  "model": "FunAudioLLM/CosyVoice2-0.5B",
+  "generatedAt": "2026-10-18T12:05:06.795Z",
+  "files": [
+    {
+      "file": "shaoluohuang-line-1.mp3",
+      "text": "Access permission required.",
+      "bytes": 96573,
+      "sha256": "4f02d53ba53cad6ab3dc6d2eed79685772bda8b11040287f1d3e86318d12cbdf"
+    },
+    {
+      "file": "shaoluohuang-line-2.mp3",
+      "text": "ID confirmed.",
+      "bytes": 39731,
+      "sha256": "cee21110701734af833dcdae733c39d3669e98dc8fe3dd6d17a27489d6540a6f"
+    },
+    {
+      "file": "shaoluohuang-line-3.mp3",
+      "text": "Request received.",
+      "bytes": 67316,
+      "sha256": "1f883ae0b457778cda8815320bfc1fef1dcd28b8bc5ef8fdbb932652bf6283ca"
+    },
+    {
+      "file": "shaoluohuang-line-4.mp3",
+      "text": "Start processing.",
+      "bytes": 28028,
+      "sha256": "09e6947ae40267746092913d7f8f9857f783c969e6fdcdd3718211136d631f3d"
+    },
+    {
+      "file": "shaoluohuang-line-5.mp3",
+      "text": "Permission authorized.",
+      "bytes": 49344,
+      "sha256": "2566d6ad1f82d25eb3d0f708e1aaf5996045b872d1108c319cc5579561080df2"
+    },
+    {
+      "file": "shaoluohuang-line-6.mp3",
+      "text": "Welcome.",
+      "bytes": 28028,
+      "sha256": "c2a383590ab1e90163f6aa980f887cdf2855e0ada2dc51b1b35a50c76ad81195"
+    }
+  ],
+  "synthesisSpeed": 1
+}

@@ -100,11 +100,13 @@ function fakeRes() {
   }
 }
 
-async function call(kindPath, method = 'GET', body, url) {
+async function call(kindPath, method = 'GET', body, url, headers) {
   const route = ROUTES.get(kindPath)
   if (!route) throw new Error('route missing: ' + kindPath)
   const res = fakeRes()
-  await route.handler(new FakeReq(method, body, url), res)
+  const req = new FakeReq(method, body, url)
+  if (headers) req.headers = headers
+  await route.handler(req, res)
   return res
 }
 
@@ -127,7 +129,7 @@ check('没有 Config 导出（普通对象不是 schemastery schema）', mod.Con
 
 console.log('\n[2] apply(ctx)：路由与注入')
 mod.apply(ctx)
-check('注册了 4 条路由', ROUTES.size === 4, [...ROUTES.keys()].join(' | '))
+check('注册了 6 条路由（包含声音管理与缓存）', ROUTES.size === 6, [...ROUTES.keys()].join(' | '))
 check('注册了 1 个 tapIndex', TAPS.length === 1)
 check('用了 ctx.effect 管理生命周期', effects === 1, String(effects))
 
@@ -180,6 +182,10 @@ cfg = JSON.parse(r.body)
 check('speed 低于下限被夹到 0.35', cfg.config.speed === 0.35, String(cfg.config.speed))
 check('非法 theme 回落到 light', cfg.config.theme === 'light', cfg.config.theme)
 check('非法颜色回落到默认橙', cfg.config.accent === '#ff7500', cfg.config.accent)
+r = await call('exact /dsh-startup/config', 'POST', JSON.stringify({ patch: { synthesisSpeed: 0.5 } }))
+check('合成语速低于 0.90 时修正到 0.90', JSON.parse(r.body).config.synthesisSpeed === 0.90)
+r = await call('exact /dsh-startup/config', 'POST', JSON.stringify({ patch: { synthesisSpeed: 2 } }))
+check('合成语速高于 1.10 时修正到 1.10', JSON.parse(r.body).config.synthesisSpeed === 1.10)
 
 r = await call('exact /dsh-startup/config', 'POST', JSON.stringify({ action: 'reset' }))
 check('reset 恢复默认', JSON.parse(r.body).config.identity === 'JOYCE MOORE')
@@ -188,6 +194,34 @@ r = await call('exact /dsh-startup/config', 'POST', '{ not json')
 check('非法 JSON 返回 400', r.statusCode === 400, String(r.statusCode))
 r = await call('exact /dsh-startup/config', 'DELETE')
 check('不支持的方法返回 405', r.statusCode === 405, String(r.statusCode))
+
+console.log('\n[4b] 声音管理 API：离线预设、失败回退、密钥隔离')
+r = await call('exact /dsh-startup/voices')
+check('声音列表包含两套系统预设', JSON.parse(r.body).voices.filter(v => v.kind === 'system').length === 2)
+check('声音列表不返回云端 URI', !r.body.includes('speech:'))
+const voicePost = body => call('exact /dsh-startup/voices', 'POST', JSON.stringify(body))
+r = await voicePost({ action: 'sync', config: { voicePreset: 'shaoluohuang' } })
+check('切换新预设可离线复用 6 段', JSON.parse(r.body).cached === 6 && JSON.parse(r.body).generated === 0)
+check('新预设实际音频路由已切换', JSON.parse(r.body).config.sceneAudio.every(url => url.includes('shaoluohuang-')))
+const saved = JSON.parse(r.body).config
+r = await voicePost({ action: 'regenerate', sceneId: 'line-1', config: saved })
+check('未填 API key 时重新生成报错', r.statusCode === 500 && JSON.parse(r.body).error.includes('API key'))
+r = await call('exact /dsh-startup/config')
+check('生成失败仍保留上一套可用录音', JSON.stringify(JSON.parse(r.body).config.sceneAudio) === JSON.stringify(saved.sceneAudio))
+r = await voicePost({ action: 'regenerate', sceneId: '../../credentials.json' })
+check('无效画面编号被拒绝', r.statusCode === 400)
+r = await voicePost({ action: 'delete', id: 'original' })
+check('系统预设不能删除', r.statusCode !== 200 && JSON.parse(r.body).error.includes('不可删除'))
+r = await voicePost({ action: 'key', apiKey: 'sk-test-host-local-only' })
+check('保存 key 仅返回状态', JSON.parse(r.body).hasApiKey === true && !r.body.includes('sk-test'))
+r = await call('exact /dsh-startup/config')
+check('普通配置没有 key', !r.body.includes('sk-test'))
+check('index 注入没有 key', !TAPS[0](REAL_INDEX.html).includes('sk-test'))
+r = await call('prefix /dsh-startup/voice-cache', 'GET', undefined, '/dsh-startup/voice-cache/../credentials.json')
+check('音频缓存接口不能读凭证文件', r.statusCode === 404)
+r = await call('exact /dsh-startup/voices', 'POST', JSON.stringify({ action: 'key', apiKey: 'sk-test-cross-site' }), undefined,
+  { host: '127.0.0.1:3080', origin: 'https://untrusted.example', 'sec-fetch-site': 'cross-site' })
+check('跨站声音写入被拒绝', r.statusCode === 403)
 
 console.log('\n[5] 信任栅栏（DNS 重绑定 / 未认证请求）')
 rejectNext = 403
